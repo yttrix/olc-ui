@@ -20,5 +20,6 @@ jobs:
           go-version-file: go.mod
       - run: cd web && npm ci && npm run build
       - run: go vet ./internal/... ./cmd/...
-      - run: go test -short ./internal/... ./core/...
+      - shell: bash
+        run: set +e; go test -short ./internal/... ./core/... 2>&1 | tee test.log; code=${PIPESTATUS[0]}; grep -E -A6 '^(--- FAIL|FAIL|panic:)' test.log | head -60 | sed 's/^/::error::/'; exit $code
       - run: CGO_ENABLED=0 go build ./cmd/olc-ui

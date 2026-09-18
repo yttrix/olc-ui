@@ -25,7 +25,8 @@ jobs:
       - name: Build panel frontend
         run: cd web && npm ci && npm run build
       - name: Test
-        run: go test -short ./internal/... ./core/...
+        shell: bash
+        run: set +e; go test -short ./internal/... ./core/... 2>&1 | tee test.log; code=${PIPESTATUS[0]}; grep -E -A6 '^(--- FAIL|FAIL|panic:)' test.log | head -60 | sed 's/^/::error::/'; exit $code
       - name: Build binaries
         run: |
           mkdir -p dist
