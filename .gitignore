@@ -1,0 +1,11 @@
+/build/
+/.toolchain/
+/_ref/
+web/node_modules/
+# The built panel is embedded at build time (make web); only the marker is tracked.
+internal/web/dist/*
+!internal/web/dist/.keep
+.DS_Store
+*.db
+*.db-wal
+*.db-shm
