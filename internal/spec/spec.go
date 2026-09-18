@@ -123,7 +123,7 @@ func NewJitsiRoom(instance string) string {
 func (e *Endpoint) Normalize() {
 	e.Provider = strings.ToLower(strings.TrimSpace(e.Provider))
 	e.Transport = strings.ToLower(strings.TrimSpace(e.Transport))
-	e.Room = strings.TrimSpace(e.Room)
+	e.Room = roomID(e.Provider, strings.TrimSpace(e.Room))
 	e.Key = strings.ToLower(strings.TrimSpace(e.Key))
 	e.DNS = strings.TrimSpace(e.DNS)
 	if e.DNS == "" {
@@ -140,6 +140,26 @@ func (e *Endpoint) Normalize() {
 	if e.Proxy != nil && strings.TrimSpace(e.Proxy.Addr) == "" {
 		e.Proxy = nil
 	}
+}
+
+// roomID accepts a pasted meeting link and keeps only the room ID for
+// providers whose API wants the bare ID: https://telemost.yandex.ru/j/<id>
+// and any stream.wb.ru link whose last path segment is the room.
+func roomID(provider, room string) string {
+	if provider != ProviderWB && provider != ProviderTelemost {
+		return room
+	}
+	host := map[string]string{ProviderWB: "stream.wb.ru", ProviderTelemost: "telemost.yandex.ru"}[provider]
+	if !strings.Contains(room, host) {
+		return room
+	}
+	room, _, _ = strings.Cut(room, "?")
+	room, _, _ = strings.Cut(room, "#")
+	parts := strings.Split(strings.Trim(room, "/"), "/")
+	if last := parts[len(parts)-1]; last != "" && !strings.Contains(last, host) {
+		return last
+	}
+	return room
 }
 
 // Validate checks the endpoint is complete and self-consistent.

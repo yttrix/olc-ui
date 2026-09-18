@@ -54,3 +54,21 @@ func TestValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestRoomFromLink(t *testing.T) {
+	cases := map[[2]string]string{
+		{ProviderTelemost, "https://telemost.yandex.ru/j/12345678901234"}: "12345678901234",
+		{ProviderTelemost, "telemost.yandex.ru/j/555/?utm=1"}:             "555",
+		{ProviderTelemost, "12345"}:                                       "12345",
+		{ProviderWB, "https://stream.wb.ru/room/3f2a-b9c1?from=share"}:    "3f2a-b9c1",
+		{ProviderWB, "abc-123"}:                                           "abc-123",
+		{ProviderJitsi, "https://meet.example.org/room"}:                  "https://meet.example.org/room",
+	}
+	for in, want := range cases {
+		ep := Endpoint{Provider: in[0], Room: in[1]}
+		ep.Normalize()
+		if ep.Room != want {
+			t.Errorf("%s %q -> %q, want %q", in[0], in[1], ep.Room, want)
+		}
+	}
+}

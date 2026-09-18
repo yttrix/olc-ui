@@ -129,8 +129,8 @@ const supportTone: Record<Support, string> = {
 const supportText: Record<Support, string> = { works: "работает", unstable: "нестабильно", broken: "не работает" };
 
 const roomHelp: Record<string, string> = {
-  wbstream: "Создайте комнату на stream.wb.ru и вставьте её ID. Гостевой вход не даёт DataChannel — используйте VP8.",
-  telemost: "Создайте встречу на telemost.yandex.ru и вставьте ссылку вида https://telemost.yandex.ru/j/… или только ID.",
+  wbstream: "Создайте комнату на stream.wb.ru и вставьте ссылку-приглашение целиком или только ID. Транспорт — VP8.",
+  telemost: "Создайте встречу на telemost.yandex.ru и вставьте ссылку https://telemost.yandex.ru/j/… целиком или только номер.",
   jitsi: "Выберите сервер Jitsi, который открывается из сети клиента. Имя комнаты можно не указывать — будет создано случайное.",
 };
 
@@ -286,8 +286,14 @@ export function LocationForm({
           </Field>
         </div>
       ) : (
-        <Field label={provider === "telemost" ? "Ссылка или ID встречи" : "ID комнаты"} hint={roomHelp[provider]}>
-          <Input value={room} onChange={(e) => setRoom(e.target.value)} required className="font-mono" />
+        <Field label={provider === "telemost" ? "Ссылка на встречу Телемоста" : "Ссылка на комнату WB Stream"} hint={roomHelp[provider]}>
+          <Input
+            value={room}
+            onChange={(e) => setRoom(e.target.value)}
+            required
+            className="font-mono"
+            placeholder={provider === "telemost" ? "https://telemost.yandex.ru/j/…" : "https://stream.wb.ru/…"}
+          />
         </Field>
       )}
 
