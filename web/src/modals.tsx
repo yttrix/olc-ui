@@ -37,6 +37,16 @@ export function QRModal({ title, text, hint, onClose }: { title: string; text: s
 export function SubscriptionModal({ client, onClose, onRotated }: { client: Client; onClose: () => void; onRotated: () => void }) {
   const toast = useToast();
   const [url, setUrl] = useState(client.sub_url);
+  const [subText, setSubText] = useState("");
+  // Prefetch the subscription body so "copy as text" works synchronously
+  // (Safari drops clipboard writes that happen after an await).
+  useEffect(() => {
+    fetch(url, { cache: "no-store" })
+      .then((r) => (r.ok ? r.text() : ""))
+      .then(setSubText)
+      .catch(() => setSubText(""));
+  }, [url]);
+  const active = client.status === "active" && client.locations.some((l) => l.enabled);
   const rotate = async () => {
     if (!window.confirm("Старая ссылка перестанет работать. Выдать новую?")) return;
     try {
@@ -59,6 +69,12 @@ export function SubscriptionModal({ client, onClose, onRotated }: { client: Clie
           <code className="min-w-0 flex-1 break-all font-mono text-xs">{url}</code>
           <CopyButton text={url} />
         </div>
+        {!active && (
+          <p className="w-full rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            В подписке сейчас нет ни одной активной локации — olcbox её не примет. Добавьте клиенту включённую локацию
+            {client.status !== "active" ? " и проверьте, что клиент активен (срок, лимит трафика)" : ""}.
+          </p>
+        )}
         <div className="flex flex-wrap justify-center gap-2">
           <a
             href={"olcbox://add?url=" + encodeURIComponent(url)}
@@ -72,6 +88,19 @@ export function SubscriptionModal({ client, onClose, onRotated }: { client: Clie
             Выдать новую ссылку
           </Button>
         </div>
+        {active && subText.includes("olcrtc://") && (
+          <div className="w-full rounded-md border border-border p-3 text-sm">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">Импорт без доступа к серверу</span>
+              <CopyButton text={subText} label="Скопировать для olcbox" />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Если телефон не может открыть ссылку подписки (мобильный интернет с белыми списками, сертификат), скопируйте
+              подписку текстом и в olcbox выберите импорт из буфера обмена. Все локации добавятся сразу, но сами обновляться
+              не будут — после изменений скопируйте заново.
+            </p>
+          </div>
+        )}
         {!url.startsWith("https://") || !/\/\/[a-z]/i.test(url) ? (
           <p className="text-center text-xs text-warning">
             Адрес без домена и доверенного сертификата: в olcbox при импорте включите «Allow insecure requests». Надёжнее —
