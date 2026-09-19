@@ -1,6 +1,7 @@
-package main
+package certs
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -16,8 +17,12 @@ import (
 	"time"
 )
 
-// selfSigned loads or creates a long-lived self-signed certificate in dir.
-func selfSigned(dir string) (tls.Certificate, error) {
+func isSelfSigned(c *x509.Certificate) bool {
+	return bytes.Equal(c.RawIssuer, c.RawSubject)
+}
+
+// SelfSigned loads or creates a long-lived self-signed certificate in dir.
+func SelfSigned(dir string) (tls.Certificate, error) {
 	certPath, keyPath := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
 	if cert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
 		return cert, nil
@@ -47,17 +52,27 @@ func selfSigned(dir string) (tls.Certificate, error) {
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
-	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
-		return tls.Certificate{}, fmt.Errorf("write cert: %w", err)
-	}
-	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
-		return tls.Certificate{}, fmt.Errorf("write key: %w", err)
+	if err := writeFiles(certPath, certPEM, keyPath, keyPEM); err != nil {
+		return tls.Certificate{}, err
 	}
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("load certificate: %w", err)
 	}
 	return cert, nil
+}
+
+func writeFiles(certPath string, certPEM []byte, keyPath string, keyPEM []byte) error {
+	if err := os.MkdirAll(filepath.Dir(certPath), 0o700); err != nil {
+		return fmt.Errorf("cert dir: %w", err)
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		return fmt.Errorf("write key: %w", err)
+	}
+	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
+		return fmt.Errorf("write cert: %w", err)
+	}
+	return nil
 }
 
 func localIPs() []net.IP {

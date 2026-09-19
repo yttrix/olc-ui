@@ -26,20 +26,29 @@ const (
 
 // Server serves the panel.
 type Server struct {
-	store   *store.Store
-	sup     *supervisor.Supervisor
-	base    string // e.g. "/a1b2c3d4/"
-	web     fs.FS
-	version string
-	started time.Time
-	limit   *limiter
+	certStatus func() any
+	tmpDir     string
+	store      *store.Store
+	sup        *supervisor.Supervisor
+	base       string // e.g. "/a1b2c3d4/"
+	web        fs.FS
+	version    string
+	started    time.Time
+	limit      *limiter
+}
+
+// Options carries optional collaborators.
+type Options struct {
+	DataDir    string
+	CertStatus func() any
 }
 
 // New builds the HTTP handler. base must start and end with "/".
-func New(st *store.Store, sup *supervisor.Supervisor, base string, web fs.FS, version string) http.Handler {
+func New(st *store.Store, sup *supervisor.Supervisor, base string, web fs.FS, version string, opts Options) http.Handler {
 	s := &Server{
 		store: st, sup: sup, base: base, web: web, version: version,
 		started: time.Now(), limit: &limiter{hits: map[string][]time.Time{}},
+		certStatus: opts.CertStatus, tmpDir: tempDir(opts.DataDir),
 	}
 	api := http.NewServeMux()
 	a := s.requireAuth
@@ -67,6 +76,11 @@ func New(st *store.Store, sup *supervisor.Supervisor, base string, web fs.FS, ve
 	api.HandleFunc("POST /locations/{id}/rotate-key", a(s.handleRotateKey))
 	api.HandleFunc("POST /locations/{id}/new-room", a(s.handleNewRoom))
 	api.HandleFunc("GET /locations/{id}/logs", a(s.handleLogs))
+	api.HandleFunc("GET /clients/{id}/devices", a(s.handleDevices))
+	api.HandleFunc("POST /clients/{id}/devices", a(s.handleDeviceAction))
+	api.HandleFunc("GET /backup", a(s.handleBackup))
+	api.HandleFunc("POST /restore", a(s.handleRestore))
+	api.HandleFunc("GET /system", a(s.handleSystem))
 
 	root := http.NewServeMux()
 	root.Handle(base+"api/", http.StripPrefix(strings.TrimSuffix(base, "/")+"/api", api))

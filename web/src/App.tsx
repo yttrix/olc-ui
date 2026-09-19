@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { LayoutDashboard, LogOut, Moon, ScrollText, Settings as SettingsIcon, Sun, Users } from "lucide-react";
+import { LayoutDashboard, LogOut, ScrollText, Settings as SettingsIcon, Users } from "lucide-react";
 import { api, type Client, type Meta, type Overview as OverviewData } from "./api";
 import { Clients } from "./Clients";
+import { LangSwitch, useLang } from "./i18n";
 import { Login } from "./Login";
 import { Logo } from "./Logo";
 import { Overview } from "./Overview";
@@ -10,50 +11,28 @@ import { cx, IconButton } from "./ui";
 
 type Tab = "overview" | "clients" | "audit" | "settings";
 
-const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: "overview", label: "Обзор", icon: <LayoutDashboard className="h-4 w-4" /> },
-  { id: "clients", label: "Клиенты", icon: <Users className="h-4 w-4" /> },
-  { id: "audit", label: "Журнал", icon: <ScrollText className="h-4 w-4" /> },
-  { id: "settings", label: "Настройки", icon: <SettingsIcon className="h-4 w-4" /> },
-];
-
 function tabFromHash(): Tab {
-  const h = window.location.hash.slice(1) as Tab;
-  return tabs.some((t) => t.id === h) ? h : "overview";
-}
-
-function useTheme() {
-  const read = () => {
-    try {
-      return localStorage.getItem("olc-theme");
-    } catch {
-      return null;
-    }
-  };
-  const [theme, setTheme] = useState<string | null>(read);
-  useEffect(() => {
-    if (theme) document.documentElement.dataset.theme = theme;
-    else delete document.documentElement.dataset.theme;
-    try {
-      if (theme) localStorage.setItem("olc-theme", theme);
-      else localStorage.removeItem("olc-theme");
-    } catch {
-      /* storage may be unavailable */
-    }
-  }, [theme]);
-  const dark = theme ? theme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
-  return { dark, toggle: () => setTheme(dark ? "light" : "dark") };
+  const h = window.location.hash.slice(1);
+  return (["overview", "clients", "audit", "settings"] as Tab[]).includes(h as Tab) ? (h as Tab) : "overview";
 }
 
 export function App() {
+  const { tr } = useLang();
   const [auth, setAuth] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>(tabFromHash);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [panelName, setPanelName] = useState("olc-ui");
+  const [version, setVersion] = useState("");
   const [jitsi, setJitsi] = useState("");
-  const theme = useTheme();
+
+  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: "overview", label: tr("Главная", "Dashboard"), icon: <LayoutDashboard className="h-4 w-4" /> },
+    { id: "clients", label: tr("Клиенты", "Clients"), icon: <Users className="h-4 w-4" /> },
+    { id: "audit", label: tr("Журнал", "Audit log"), icon: <ScrollText className="h-4 w-4" /> },
+    { id: "settings", label: tr("Настройки", "Settings"), icon: <SettingsIcon className="h-4 w-4" /> },
+  ];
 
   useEffect(() => {
     api.me().then((m) => setAuth(m.authenticated)).catch(() => setAuth(false));
@@ -72,6 +51,7 @@ export function App() {
     setClients(c);
     setOverview(o);
     setPanelName(o.name);
+    setVersion(o.version);
   }, []);
 
   useEffect(() => {
@@ -104,37 +84,37 @@ export function App() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 sm:px-5">
-          <div className="flex items-center gap-2.5">
-            <Logo size={30} />
-            <span className="hidden font-semibold sm:inline">{panelName}</span>
+      <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-md">
+        <div className="mx-auto flex max-w-[1320px] items-center gap-3 px-4 pt-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Logo size={32} />
+            <span className="truncate text-lg font-bold tracking-tight">{panelName}</span>
           </div>
-          <nav className="flex flex-1 gap-1 overflow-x-auto">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => go(t.id)}
-                className={cx(
-                  "inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm transition-colors",
-                  tab === t.id ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t.icon}
-                <span className="hidden md:inline">{t.label}</span>
-              </button>
-            ))}
-          </nav>
-          <IconButton title={theme.dark ? "Светлая тема" : "Тёмная тема"} onClick={theme.toggle}>
-            {theme.dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </IconButton>
-          <IconButton title="Выйти" onClick={logout}>
+          <div className="flex-1" />
+          {version && <span className="hidden h-8 items-center rounded-[9px] border border-border-strong bg-background-2 px-2.5 font-mono text-xs text-muted-foreground sm:inline-flex">{version}</span>}
+          <LangSwitch />
+          <IconButton title={tr("Выйти", "Sign out")} tone="primary" onClick={logout}>
             <LogOut className="h-4 w-4" />
           </IconButton>
         </div>
+        <nav className="mx-auto flex max-w-[1320px] gap-1 overflow-x-auto px-3 sm:px-4">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => go(t.id)}
+              className={cx(
+                "inline-flex shrink-0 items-center gap-2 border-b-2 px-3 pb-3 pt-3.5 text-sm transition-colors",
+                tab === t.id ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
+        </nav>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-5 sm:px-5">
+      <main className="mx-auto max-w-[1320px] px-4 py-5 sm:px-5">
         {tab === "overview" && <Overview data={overview} clients={clients} />}
         {tab === "clients" && <Clients clients={clients} meta={meta} defaultJitsi={jitsi} reload={reload} />}
         {tab === "audit" && <Audit />}
@@ -145,6 +125,7 @@ export function App() {
               setPanelName(s.panel_name || "olc-ui");
               setJitsi(s.jitsi_instance);
             }}
+            onRestored={reload}
           />
         )}
       </main>

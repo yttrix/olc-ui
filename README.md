@@ -13,50 +13,76 @@
 В основе лежит ядро [olcrtc](https://github.com/openlibrecommunity/olcrtc) (форк в `core/`, WTFPL).
 Интерфейс похож на [olcrtc-manager-panel](https://github.com/BigDaddy3334/olcrtc-manager-panel).
 
+**[English version below](#english)**
+
 ## Возможности
 
-- Клиенты с квотами: лимит скорости, лимит трафика, срок действия, включение и отключение.
-- У каждого клиента одна или несколько локаций (сервис + транспорт + комната). Каждая работает в отдельном процессе с автоперезапуском.
-- Подписки в формате olcrtc (`/sub/<токен>`), ссылки `olcrtc://` и QR-коды для приложения [olcbox](https://github.com/alananisimov/olcbox) (Android, iOS, macOS, Windows, Linux), импорт в один клик.
-- Живой мониторинг: подключённые устройства, скорость, RTT, логи каждой локации, график трафика по дням.
-- Учёт трафика и ограничение скорости без root и без iptables.
-- Один бинарник без зависимостей: панель встроена, база — SQLite.
-- Вход по паролю (bcrypt, сессии, ограничение попыток), панель на случайном секретном пути, HTTPS из коробки.
+- Клиенты с квотами: скорость, трафик, срок действия, **до 3 одновременных подключений** (настраивается), **лимит устройств** по HWID приложения — как в Happ/Incy.
+- У клиента одна или несколько локаций (сервис + транспорт + комната). Каждая работает в отдельном процессе с автоперезапуском. Одна комната не может использоваться дважды.
+- Подписки для [olcbox](https://github.com/alananisimov/olcbox) (Android, iOS, macOS, Windows, Linux): ссылка, QR-код, «Открыть в olcbox» в один клик.
+- Дашборд в стиле Remnawave: трафик за сегодня/неделю/месяц с изменением к прошлому периоду, онлайн, график по дням, таблица клиентов с сортировкой и фильтрами.
+- **Резервная копия** в один клик и восстановление на новом сервере.
+- **HTTPS от Let's Encrypt на IP-адрес** (без домена) или на домен, свой сертификат, самоподписанный — выбирается при установке, продлевается без перезапуска.
+- Меню управления `olc-ui` на сервере, как у 3x-ui.
+- Интерфейс на русском и английском.
+- Один бинарник без зависимостей: панель встроена, база — SQLite. Вход по паролю (bcrypt, ограничение попыток), панель на случайном секретном пути.
 
 ## Установка
 
-На чистом VPS с Debian/Ubuntu (amd64 или arm64):
+На VPS с Debian/Ubuntu (amd64 или arm64), от root:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yttrix/olc-ui/main/scripts/install.sh | sudo bash
+bash <(curl -fsSL https://raw.githubusercontent.com/yttrix/olc-ui/main/scripts/install.sh)
 ```
 
-В конце скрипт выведет адрес панели, логин и пароль. Сертификат самоподписанный, поэтому браузер один раз
-покажет предупреждение — это нормально.
+Установщик спросит язык, порт и способ получения HTTPS-сертификата:
 
-Опции задаются переменными окружения:
+1. **Let's Encrypt на IP-адрес** — рекомендуется: без домена, без предупреждений браузера, olcbox принимает подписку без галочек. Нужен открытый порт 80.
+2. **Let's Encrypt на домен** — если есть домен, указывающий на сервер. При переезде на новый сервер подписки клиентов продолжают работать.
+3. **Свой сертификат** — пути к файлам (например, от certbot); обновления файлов подхватываются сами.
+4. **Самоподписанный** — браузер покажет предупреждение, в olcbox нужно включить «Allow insecure requests».
+5. **Без SSL** — только за nginx/Caddy.
+
+В конце выводятся адрес панели, логин и пароль. Обновление — та же команда: клиенты, настройки и пароль сохраняются.
+
+### Меню управления
+
+После установки на сервере доступна команда `olc-ui`:
+
+```text
+olc-ui              меню: статус, перезапуск, логи, сброс пароля, порт, путь, SSL, копии, обновление, удаление
+olc-ui status       адрес панели и состояние
+olc-ui ssl          выбрать или перевыпустить сертификат
+olc-ui backup       сохранить копию в /root/olc-ui-backups
+olc-ui restore FILE восстановить клиентов из копии
+olc-ui password     сбросить логин и пароль
+olc-ui update       обновить
+```
+
+Без вопросов (например, в скриптах):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yttrix/olc-ui/main/scripts/install.sh | sudo env OLCUI_PORT=2053 bash
+curl -fsSL https://raw.githubusercontent.com/yttrix/olc-ui/main/scripts/install.sh | \
+  sudo env OLCUI_YES=1 OLCUI_LANG=ru OLCUI_PORT=2053 OLCUI_SSL=ip bash
 ```
 
 | Переменная | Значение |
 |---|---|
+| `OLCUI_LANG` | `ru` или `en` |
 | `OLCUI_PORT` | порт панели (по умолчанию случайный) |
-| `OLCUI_TLS` | `auto` — самоподписанный HTTPS, `off` — HTTP за reverse proxy |
-| `OLCUI_VERSION` | конкретный релиз, например `v0.1.0` |
+| `OLCUI_SSL` | `ip`, `domain`, `custom`, `self`, `none` |
+| `OLCUI_DOMAIN` | домен для `domain` / `custom` |
+| `OLCUI_CERT`, `OLCUI_KEY` | пути к файлам для `custom` |
+| `OLCUI_VERSION` | конкретный релиз, например `v0.2.0` |
 | `OLCUI_FROM_SOURCE=1` | собрать из исходников вместо скачивания релиза |
 
-Обновление — та же команда. Данные и пароль сохраняются.
-Удаление: `sudo bash install.sh uninstall`.
+Файлы: настройки `/etc/olc-ui/olc-ui.env`, данные `/var/lib/olc-ui`, логи `journalctl -u olc-ui -f`.
 
-Настройки сервиса: `/etc/olc-ui/olc-ui.env`, данные: `/var/lib/olc-ui`, логи: `journalctl -u olc-ui -f`.
+### Перенос на новый сервер
 
-Забыли пароль:
-
-```sh
-sudo -u olcui env $(grep -v '^#' /etc/olc-ui/olc-ui.env | xargs) olc-ui admin
-```
+1. На старой панели: **Настройки → Резервная копия → Скачать копию** (или `olc-ui backup`).
+2. На новом сервере установите olc-ui и выберите в панели **Восстановить из копии** (или `olc-ui restore файл`).
+3. Туннели поднимутся с теми же комнатами и ключами. Если у сервера другой IP и нет домена — клиентам нужно добавить подписку заново.
 
 ## Приложение для подключения
 
@@ -145,3 +171,32 @@ make cross          # linux amd64 + arm64
 | `internal/spec` | описание точки подключения, валидация, формат `olcrtc://` |
 | `web/` | React + Tailwind интерфейс, встраивается в бинарник |
 | `core/` | форк ядра olcrtc (+ хук `WrapEgress` для учёта трафика) |
+
+---
+
+<a id="english"></a>
+
+## English
+
+**olc-ui** is a web panel for olcrtc tunnels over video-call services (**WB Stream**, **Yandex Telemost**, **Jitsi**).
+Client traffic looks like an ordinary video call to a whitelisted service; inside is an encrypted TCP tunnel.
+
+**Install** (Debian/Ubuntu, amd64/arm64, as root):
+
+```sh
+bash <(curl -fsSL https://raw.githubusercontent.com/yttrix/olc-ui/main/scripts/install.sh)
+```
+
+The installer asks for the language, the port and the HTTPS certificate: Let's Encrypt for the **IP address** (no domain
+needed, recommended), Let's Encrypt for a domain, your own certificate files, self-signed, or no SSL behind a proxy.
+Certificates renew automatically without restarting the panel. Re-run the same command to update.
+
+**Features:** clients with speed/traffic/expiry limits, up to 3 simultaneous connections per client and an optional device
+(HWID) limit, locations on WB Stream / Telemost / Jitsi, subscriptions and QR codes for the
+[olcbox](https://github.com/alananisimov/olcbox/releases/latest) app, a Remnawave-style dashboard, sortable client table,
+one-click backup and restore, `olc-ui` server menu (status, password, port, path, SSL, backup, update), Russian and English UI.
+
+**Clients:** use [olcbox](https://github.com/alananisimov/olcbox/releases/latest) on Android, iOS, macOS, Windows and Linux:
+open *Subscription* in the panel and tap *Open in olcbox* or scan the QR code.
+
+See [docs/providers.md](docs/providers.md) (Russian) for creating WB Stream and Telemost rooms.

@@ -1,103 +1,135 @@
-import { Activity, ArrowDown, ArrowUp, Cpu, Radio, Smartphone, Users } from "lucide-react";
+import {
+  Activity,
+  ArrowDown,
+  CalendarDays,
+  CircleSlash,
+  Clock,
+  Cpu,
+  Gauge,
+  HardDrive,
+  PieChart,
+  Radio,
+  RefreshCw,
+  Smartphone,
+  TimerOff,
+  Users,
+} from "lucide-react";
 import type { Client, Overview as OverviewData } from "./api";
-import { bytes, duration, providerLabel, rate, transportLabel } from "./format";
+import { bytes, duration, rate, transportLabel } from "./format";
+import { useLang } from "./i18n";
 import { TrafficChart } from "./TrafficChart";
-import { Badge, Card, StatCard } from "./ui";
+import { Card, Delta, ProviderMark, SectionTitle, StatCard } from "./ui";
 
 export function Overview({ data, clients }: { data: OverviewData | null; clients: Client[] }) {
+  const { tr, lang } = useLang();
   const s = data?.stats ?? {};
-  const online = clients.flatMap((c) =>
-    c.locations.flatMap((l) => l.runtime.peers.map((p) => ({ client: c.name, loc: l, peer: p }))),
-  );
-  const today = data?.traffic.at(-1);
+  const t = data?.totals ?? {};
+  const n = (v: number | undefined) => (data ? v ?? 0 : "…");
+  const online = clients.flatMap((c) => c.locations.flatMap((l) => l.runtime.peers.map((p) => ({ client: c.name, loc: l, peer: p }))));
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div>
+      <SectionTitle>{tr("Сервер", "Server")}</SectionTitle>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={<Radio />} label={tr("Туннели работают", "Tunnels running")} value={data ? `${s.running ?? 0} / ${s.locations ?? 0}` : "…"} />
+        <StatCard icon={<HardDrive />} tone="sky" label={tr("Память туннелей", "Tunnels memory")} value={data ? (s.workers_mem ? bytes(s.workers_mem, lang) : "—") : "…"} />
+        <StatCard icon={<Cpu />} tone="success" label={tr("Память панели", "Panel memory")} value={bytes(data?.memory.sys, lang)} />
+        <StatCard icon={<Clock />} tone="warning" label={tr("Аптайм", "Uptime")} value={data ? duration(data.uptime, lang) : "…"} sub={data?.version} />
+      </div>
+
+      <SectionTitle>{tr("Трафик", "Traffic")}</SectionTitle>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          icon={<Users className="h-4 w-4" />}
-          label="Клиенты"
-          value={data ? `${s.active_clients ?? 0} / ${s.clients ?? 0}` : "…"}
-          sub="активные / всего"
+          icon={<CalendarDays />}
+          label={tr("Сегодня", "Today")}
+          value={bytes(t.today, lang)}
+          sub={data && <Delta now={t.today} prev={t.yesterday} label={tr("ко вчера", "vs yesterday")} />}
         />
         <StatCard
-          icon={<Radio className="h-4 w-4" />}
-          label="Локации"
-          value={data ? `${s.running ?? 0} / ${s.locations ?? 0}` : "…"}
-          sub="работают / всего"
+          icon={<RefreshCw />}
+          tone="success"
+          label={tr("7 дней", "7 days")}
+          value={bytes(t.week, lang)}
+          sub={data && <Delta now={t.week} prev={t.prev_week} label={tr("к прошлой неделе", "vs last week")} />}
         />
-        <StatCard icon={<Smartphone className="h-4 w-4" />} label="Устройства онлайн" value={data ? s.peers ?? 0 : "…"} />
         <StatCard
-          icon={<Activity className="h-4 w-4" />}
-          label="Скорость сейчас"
+          icon={<PieChart />}
+          tone="violet"
+          label={tr("30 дней", "30 days")}
+          value={bytes(t.month, lang)}
+          sub={data && <Delta now={t.month} prev={t.prev_month} label={tr("к прошлому месяцу", "vs last month")} />}
+        />
+        <StatCard
+          icon={<Gauge />}
+          tone="sky"
+          label={tr("Скорость сейчас", "Speed now")}
           value={
-            <span className="flex items-center gap-3 text-xl">
-              <span className="inline-flex items-center gap-1">
-                <ArrowDown className="h-4 w-4 text-primary" />
-                {rate(s.rate_down)}
-              </span>
-              <span className="inline-flex items-center gap-1 text-muted-foreground">
-                <ArrowUp className="h-4 w-4" />
-                {rate(s.rate_up)}
-              </span>
+            <span className="inline-flex items-center gap-1">
+              <ArrowDown className="h-4 w-4 text-primary" />
+              {rate(s.rate_down, lang)}
             </span>
           }
-          sub={today ? `сегодня ${bytes(today.down + today.up)}` : undefined}
+          sub={`↑ ${rate(s.rate_up, lang)}`}
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <Card className="p-4">
-          <h2 className="mb-3 font-semibold">Трафик за 30 дней</h2>
-          {data ? <TrafficChart data={data.traffic} /> : <div className="h-40" />}
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-3 flex items-center gap-2 font-semibold">
-            <Cpu className="h-4 w-4 text-muted-foreground" /> Сервер
-          </h2>
-          <dl className="tabular grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Версия</dt>
-            <dd className="text-right">{data?.version ?? "…"}</dd>
-            <dt className="text-muted-foreground">Аптайм панели</dt>
-            <dd className="text-right">{data ? duration(data.uptime) : "…"}</dd>
-            <dt className="text-muted-foreground">Память панели</dt>
-            <dd className="text-right">{bytes(data?.memory.sys)}</dd>
-            <dt className="text-muted-foreground">Память туннелей</dt>
-            <dd className="text-right">{data ? (s.workers_mem ? bytes(s.workers_mem) : "—") : "…"}</dd>
-          </dl>
-        </Card>
+      <Card className="mt-3 p-4">
+        <h3 className="mb-3 font-semibold">{tr("Трафик за 30 дней", "Traffic, last 30 days")}</h3>
+        {data ? <TrafficChart data={data.traffic} /> : <div className="h-44" />}
+      </Card>
+
+      <SectionTitle>{tr("Онлайн", "Online")}</SectionTitle>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={<Activity />} tone="success" label={tr("Устройств сейчас", "Devices now")} value={n(s.peers)} />
+        <StatCard icon={<Clock />} label={tr("Клиентов онлайн сегодня", "Clients online today")} value={n(s.online_today)} />
+        <StatCard icon={<Users />} tone="violet" label={tr("Онлайн за неделю", "Online this week")} value={n(s.online_week)} />
+        <StatCard icon={<CircleSlash />} tone="destructive" label={tr("Ни разу не подключались", "Never connected")} value={n(s.never_online)} />
       </div>
 
+      <SectionTitle>{tr("Клиенты", "Clients")}</SectionTitle>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <StatCard icon={<Users />} label={tr("Всего", "Total")} value={n(s.clients)} />
+        <StatCard icon={<Activity />} tone="success" label={tr("Активны", "Active")} value={n(s.status_active)} />
+        <StatCard icon={<TimerOff />} tone="destructive" label={tr("Истёк срок", "Expired")} value={n(s.status_expired)} />
+        <StatCard icon={<PieChart />} tone="warning" label={tr("Лимит трафика", "Traffic limit")} value={n(s.status_traffic_exceeded)} />
+        <StatCard icon={<CircleSlash />} tone="muted" label={tr("Отключены", "Disabled")} value={n(s.status_disabled)} />
+      </div>
+
+      <SectionTitle>{tr("Подключённые устройства", "Connected devices")}</SectionTitle>
       <Card>
-        <h2 className="border-b border-border px-4 py-3 font-semibold">Подключённые устройства</h2>
         {online.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-muted-foreground">Сейчас никто не подключён.</p>
+          <p className="px-4 py-8 text-center text-sm text-muted-foreground">{tr("Сейчас никто не подключён.", "Nobody is connected right now.")}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="px-4 py-2 font-medium">Клиент</th>
-                  <th className="px-4 py-2 font-medium">Локация</th>
-                  <th className="px-4 py-2 font-medium">Канал</th>
-                  <th className="px-4 py-2 font-medium">Устройство</th>
-                  <th className="px-4 py-2 text-right font-medium">Скорость ↓</th>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <th className="px-4 py-2.5 font-medium">{tr("Клиент", "Client")}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr("Локация", "Location")}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr("Канал", "Channel")}</th>
+                  <th className="px-4 py-2.5 font-medium">{tr("Устройство", "Device")}</th>
+                  <th className="px-4 py-2.5 text-right font-medium">{tr("Скорость", "Speed")}</th>
                 </tr>
               </thead>
               <tbody>
                 {online.map(({ client, loc, peer }) => (
                   <tr key={peer.session} className="border-b border-border/60 last:border-0">
-                    <td className="px-4 py-2.5 font-medium">{client}</td>
+                    <td className="px-4 py-2.5 font-semibold">
+                      <span className="mr-2 inline-block h-2 w-2 rounded-full bg-success shadow-[0_0_8px_hsl(var(--success))]" />
+                      {client}
+                    </td>
                     <td className="px-4 py-2.5">{loc.name || "—"}</td>
                     <td className="px-4 py-2.5">
-                      <Badge tone="ok">
-                        {providerLabel[loc.endpoint.provider]} · {transportLabel[loc.endpoint.transport]}
-                      </Badge>
+                      <span className="inline-flex items-center gap-2">
+                        <ProviderMark provider={loc.endpoint.provider} withName />
+                        <span className="text-muted-foreground">· {transportLabel[loc.endpoint.transport]}</span>
+                      </span>
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground" title={peer.device}>
+                      <Smartphone className="mr-1 inline h-3.5 w-3.5" />
                       {peer.device.slice(0, 8)}
                     </td>
-                    <td className="tabular px-4 py-2.5 text-right">{rate(loc.runtime.rate_down)}</td>
+                    <td className="tabular px-4 py-2.5 text-right">{rate(loc.runtime.rate_down, lang)}</td>
                   </tr>
                 ))}
               </tbody>

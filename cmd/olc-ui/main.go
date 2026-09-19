@@ -6,6 +6,9 @@
 //	olc-ui client <olcrtc://...>    run a local SOCKS5 client for testing
 //	olc-ui admin [-user u] [-pass p]  set admin credentials, print panel path
 //	olc-ui info                     print the panel path
+//	olc-ui cert                     issue a Let's Encrypt certificate now
+//	olc-ui backup [-o file]         write a database backup
+//	olc-ui restore <file>           restore clients from a backup
 //	olc-ui version
 package main
 
@@ -30,6 +33,12 @@ func main() {
 		os.Exit(worker.Main(args))
 	case "client":
 		os.Exit(clientMain(args))
+	case "cert":
+		os.Exit(certMain(args))
+	case "backup":
+		os.Exit(backupMain(args))
+	case "restore":
+		os.Exit(restoreMain(args))
 	case "info":
 		os.Exit(infoMain(args))
 	case "admin":

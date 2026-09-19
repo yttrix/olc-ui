@@ -35,7 +35,8 @@ jobs:
               -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
               -o dist/olc-ui-linux-$arch ./cmd/olc-ui
           done
-          cd dist && sha256sum olc-ui-* > SHA256SUMS
+          cp scripts/olc-ui.sh dist/olc-ui.sh
+          cd dist && sha256sum olc-ui-* olc-ui.sh > SHA256SUMS
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:

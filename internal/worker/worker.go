@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/yttrix/olc-ui/core/pkg/olcrtc/tunnel"
 	"github.com/yttrix/olc-ui/internal/meter"
 	"github.com/yttrix/olc-ui/internal/spec"
@@ -34,6 +36,7 @@ const StatsInterval = 2 * time.Second
 type Config struct {
 	Endpoint  spec.Endpoint `json:"endpoint"`
 	SpeedMbps int           `json:"speed_mbps"`
+	MaxConns  int           `json:"max_conns"` // simultaneous devices, 0 = unlimited
 }
 
 // Event types emitted on stdout.
@@ -44,6 +47,7 @@ const (
 	EvStats   = "stats"
 	EvHealth  = "health"
 	EvExit    = "exit"
+	EvReject  = "reject"
 )
 
 // Event is one line of worker output.
@@ -64,6 +68,7 @@ type Event struct {
 type Command struct {
 	Cmd       string `json:"cmd"` // "limit"
 	SpeedMbps int    `json:"speed_mbps"`
+	MaxConns  int    `json:"max_conns"`
 }
 
 type emitter struct {
@@ -120,15 +125,25 @@ func Run(ctx context.Context, cfg Config, emit func(Event), commands io.Reader) 
 	defer cancel()
 
 	m := meter.New(cfg.SpeedMbps)
-	go readCommands(commands, m, cancel)
+	g := newGate(cfg.MaxConns)
+	go readCommands(commands, m, g, cancel)
 	go reportStats(ctx, m, emit)
 
 	tc := cfg.Endpoint.TunnelConfig()
 	tc.WrapEgress = m.Wrap
+	tc.AuthHook = func(dev string, _ map[string]any) (string, error) {
+		if err := g.admit(dev); err != nil {
+			emit(Event{Type: EvReject, Device: dev, Reason: err.Error()})
+			return "", err
+		}
+		return uuid.NewString(), nil
+	}
 	tc.OnSessionOpen = func(sid, dev string, _ map[string]any) {
+		g.open(sid, dev)
 		emit(Event{Type: EvOpen, Session: sid, Device: dev})
 	}
 	tc.OnSessionClose = func(sid, reason string) {
+		g.close(sid)
 		emit(Event{Type: EvClose, Session: sid, Reason: reason})
 	}
 	tc.OnHealth = func(st tunnel.HealthStatus) {
@@ -144,7 +159,7 @@ func Run(ctx context.Context, cfg Config, emit func(Event), commands io.Reader) 
 	return nil
 }
 
-func readCommands(r io.Reader, m *meter.Meter, cancel context.CancelFunc) {
+func readCommands(r io.Reader, m *meter.Meter, g *gate, cancel context.CancelFunc) {
 	if r == nil {
 		return
 	}
@@ -157,6 +172,7 @@ func readCommands(r io.Reader, m *meter.Meter, cancel context.CancelFunc) {
 		}
 		if c.Cmd == "limit" {
 			m.SetLimit(c.SpeedMbps)
+			g.setMax(c.MaxConns)
 		}
 	}
 }

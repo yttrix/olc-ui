@@ -24,6 +24,9 @@ type Client struct {
 	Refresh      string     `json:"refresh"`
 	SubToken     string     `json:"sub_token"`
 	CreatedAt    int64      `json:"created_at"`
+	MaxConns     int        `json:"max_conns"`   // simultaneous tunnel connections, 0 = unlimited
+	MaxDevices   int        `json:"max_devices"` // subscription devices (HWID), 0 = unlimited
+	LastOnline   int64      `json:"last_online"` // unix time of the last connected peer
 	Locations    []Location `json:"locations"`
 }
 
@@ -59,12 +62,12 @@ func (c Client) Status(now time.Time) string {
 	}
 }
 
-const clientCols = `id,name,note,enabled,speed_mbps,traffic_limit,used_bytes,expires_at,refresh,sub_token,created_at`
+const clientCols = `id,name,note,enabled,speed_mbps,traffic_limit,used_bytes,expires_at,refresh,sub_token,created_at,max_conns,max_devices,last_online`
 
 func scanClient(sc interface{ Scan(...any) error }) (Client, error) {
 	var c Client
 	err := sc.Scan(&c.ID, &c.Name, &c.Note, &c.Enabled, &c.SpeedMbps, &c.TrafficLimit,
-		&c.UsedBytes, &c.ExpiresAt, &c.Refresh, &c.SubToken, &c.CreatedAt)
+		&c.UsedBytes, &c.ExpiresAt, &c.Refresh, &c.SubToken, &c.CreatedAt, &c.MaxConns, &c.MaxDevices, &c.LastOnline)
 	return c, wrap(err)
 }
 
@@ -127,16 +130,16 @@ func (s *Store) SaveClient(c *Client) error {
 	if c.ID == 0 {
 		c.SubToken = RandomToken(16)
 		c.CreatedAt = time.Now().Unix()
-		res, err := s.db.Exec(`INSERT INTO clients(name,note,enabled,speed_mbps,traffic_limit,expires_at,refresh,sub_token,created_at)
-			VALUES(?,?,?,?,?,?,?,?,?)`, c.Name, c.Note, c.Enabled, c.SpeedMbps, c.TrafficLimit, c.ExpiresAt, c.Refresh, c.SubToken, c.CreatedAt)
+		res, err := s.db.Exec(`INSERT INTO clients(name,note,enabled,speed_mbps,traffic_limit,expires_at,refresh,sub_token,created_at,max_conns,max_devices)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?)`, c.Name, c.Note, c.Enabled, c.SpeedMbps, c.TrafficLimit, c.ExpiresAt, c.Refresh, c.SubToken, c.CreatedAt, c.MaxConns, c.MaxDevices)
 		if err != nil {
 			return uniq(err)
 		}
 		c.ID, _ = res.LastInsertId()
 		return nil
 	}
-	res, err := s.db.Exec(`UPDATE clients SET name=?,note=?,enabled=?,speed_mbps=?,traffic_limit=?,expires_at=?,refresh=? WHERE id=?`,
-		c.Name, c.Note, c.Enabled, c.SpeedMbps, c.TrafficLimit, c.ExpiresAt, c.Refresh, c.ID)
+	res, err := s.db.Exec(`UPDATE clients SET name=?,note=?,enabled=?,speed_mbps=?,traffic_limit=?,expires_at=?,refresh=?,max_conns=?,max_devices=? WHERE id=?`,
+		c.Name, c.Note, c.Enabled, c.SpeedMbps, c.TrafficLimit, c.ExpiresAt, c.Refresh, c.MaxConns, c.MaxDevices, c.ID)
 	if err != nil {
 		return uniq(err)
 	}

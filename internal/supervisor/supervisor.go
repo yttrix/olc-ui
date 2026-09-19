@@ -82,10 +82,12 @@ type Supervisor struct {
 	wg      sync.WaitGroup
 }
 
+type limits struct{ speed, conns int }
+
 type proc struct {
 	loc      store.Location
 	hash     string
-	speed    int
+	lim      limits
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
 	done     chan struct{}
@@ -137,7 +139,16 @@ func (s *Supervisor) flushUsage() {
 	s.mu.Lock()
 	pending := s.pending
 	s.pending = map[int64][2]uint64{}
+	online := []int64{}
+	for _, p := range s.procs {
+		if len(p.rt.Peers) > 0 {
+			online = append(online, p.loc.ClientID)
+		}
+	}
 	s.mu.Unlock()
+	if len(online) > 0 {
+		s.store.SetLastOnline(online, time.Now().Unix())
+	}
 	if len(pending) == 0 {
 		return
 	}
@@ -154,7 +165,7 @@ func (s *Supervisor) reconcile() {
 	}
 	now := time.Now()
 	want := map[int64]store.Location{}
-	speed := map[int64]int{}
+	lim := map[int64]limits{}
 	stopped := map[int64]string{}
 	for _, c := range clients {
 		status := c.Status(now)
@@ -166,7 +177,7 @@ func (s *Supervisor) reconcile() {
 				stopped[l.ID] = store.StatusDisabled
 			default:
 				want[l.ID] = l
-				speed[l.ID] = c.SpeedMbps
+				lim[l.ID] = limits{speed: c.SpeedMbps, conns: c.MaxConns}
 			}
 		}
 	}
@@ -183,16 +194,16 @@ func (s *Supervisor) reconcile() {
 	for id, l := range want {
 		p := s.procs[id]
 		if p == nil {
-			s.startLocked(l, speed[id], 0, 0)
+			s.startLocked(l, lim[id], 0, 0)
 			continue
 		}
 		if p.cmd == nil && now.After(p.retryAt) {
-			s.startLocked(l, speed[id], p.rt.Restarts+1, p.backoff)
+			s.startLocked(l, lim[id], p.rt.Restarts+1, p.backoff)
 			continue
 		}
-		if p.speed != speed[id] && p.stdin != nil {
-			p.speed = speed[id]
-			_ = json.NewEncoder(p.stdin).Encode(worker.Command{Cmd: "limit", SpeedMbps: p.speed})
+		if p.lim != lim[id] && p.stdin != nil {
+			p.lim = lim[id]
+			_ = json.NewEncoder(p.stdin).Encode(worker.Command{Cmd: "limit", SpeedMbps: p.lim.speed, MaxConns: p.lim.conns})
 		}
 	}
 }
@@ -202,15 +213,15 @@ func locHash(l store.Location) string {
 	return string(raw)
 }
 
-func (s *Supervisor) startLocked(l store.Location, speed, restarts int, backoff time.Duration) {
-	p := &proc{loc: l, hash: locHash(l), speed: speed, done: make(chan struct{}), backoff: backoff}
+func (s *Supervisor) startLocked(l store.Location, lim limits, restarts int, backoff time.Duration) {
+	p := &proc{loc: l, hash: locHash(l), lim: lim, done: make(chan struct{}), backoff: backoff}
 	p.rt = Runtime{Status: StatusBackoff, Restarts: restarts, Peers: []Peer{}}
 	if old := s.procs[l.ID]; old != nil {
 		p.logs = old.logs // keep history across crash restarts
 	}
 	s.procs[l.ID] = p
 
-	cfgPath, err := s.writeConfig(l, speed)
+	cfgPath, err := s.writeConfig(l, lim)
 	if err != nil {
 		s.failLocked(p, err)
 		return
@@ -242,8 +253,8 @@ func (s *Supervisor) startLocked(l store.Location, speed, restarts int, backoff 
 	}()
 }
 
-func (s *Supervisor) writeConfig(l store.Location, speed int) (string, error) {
-	raw, err := json.Marshal(worker.Config{Endpoint: l.Endpoint, SpeedMbps: speed})
+func (s *Supervisor) writeConfig(l store.Location, lim limits) (string, error) {
+	raw, err := json.Marshal(worker.Config{Endpoint: l.Endpoint, SpeedMbps: lim.speed, MaxConns: lim.conns})
 	if err != nil {
 		return "", fmt.Errorf("marshal worker config: %w", err)
 	}
@@ -363,6 +374,8 @@ func (s *Supervisor) applyEvent(p *proc, ev worker.Event) {
 		p.rt.Down, p.rt.Up, p.rt.Conns = ev.Down, ev.Up, ev.Active
 		acc := s.pending[p.loc.ClientID]
 		s.pending[p.loc.ClientID] = [2]uint64{acc[0] + dDown, acc[1] + dUp}
+	case worker.EvReject:
+		p.appendLog(fmt.Sprintf("[olc-ui] connection rejected: device %s: %s", ev.Device, ev.Reason))
 	case worker.EvExit:
 		p.rt.LastError = ev.Error
 	}

@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
 
 jobs:
@@ -22,4 +22,61 @@ jobs:
       - run: go vet ./internal/... ./cmd/...
       - shell: bash
         run: set +e; go test -short ./internal/... ./core/... 2>&1 | tee test.log; code=${PIPESTATUS[0]}; grep -E -A6 '^(--- FAIL|FAIL|panic:)' test.log | head -60 | sed 's/^/::error::/'; exit $code
-      - run: CGO_ENABLED=0 go build ./cmd/olc-ui
+      - run: CGO_ENABLED=0 go build -o olc-ui ./cmd/olc-ui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: olc-ui
+          path: olc-ui
+
+  # Installs the previous release, adds a client, then upgrades with the
+  # installer and menu from this commit on a real systemd host.
+  install:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: olc-ui
+      - name: Install v0.1.3
+        run: curl -fsSL https://raw.githubusercontent.com/yttrix/olc-ui/v0.1.3/scripts/install.sh | sudo env OLCUI_VERSION=v0.1.3 OLCUI_PORT=24443 bash
+      - name: Add a client on v0.1.3
+        shell: bash
+        run: |
+          set -ex
+          sudo -u olcui env $(grep -v '^#' /etc/olc-ui/olc-ui.env | xargs) /usr/local/bin/olc-ui admin -pass ci-password-1 > creds
+          P=$(sed -n 's/^path=//p' creds)
+          U="https://127.0.0.1:24443${P}api"
+          curl -fsk -c jar -H 'Content-Type: application/json' -d '{"user":"admin","pass":"ci-password-1"}' $U/login
+          curl -fsk -b jar -H 'X-OLC: 1' -d '{"name":"ci-client","note":"","enabled":true,"speed_mbps":0,"traffic_limit":0,"expires_at":"","refresh":""}' $U/clients
+          curl -fsk -b jar -H 'X-OLC: 1' -d '{"name":"loc","enabled":false,"endpoint":{"provider":"jitsi","transport":"datachannel","room":"meet.example.org","key":""}}' $U/clients/1/locations
+          echo "$P" > panel_path
+      - name: Upgrade to this commit
+        run: sudo env OLCUI_YES=1 OLCUI_LANG=en OLCUI_BIN_FILE=$PWD/olc-ui OLCUI_MENU_FILE=$PWD/scripts/olc-ui.sh bash scripts/install.sh
+      - name: Check upgrade kept data and new features work
+        shell: bash
+        run: |
+          set -ex
+          systemctl is-active olc-ui
+          sudo olc-ui status
+          grep -q '^OLCUI_TLS=self$' /etc/olc-ui/olc-ui.env
+          test -x /usr/local/lib/olc-ui/olc-ui
+          P=$(cat panel_path)
+          U="https://127.0.0.1:24443${P}api"
+          curl -fsk -c jar -H 'Content-Type: application/json' -d '{"user":"admin","pass":"ci-password-1"}' $U/login
+          curl -fsk -b jar $U/clients | tee clients.json
+          python3 -c "import json;c=json.load(open('clients.json'))[0];assert c['name']=='ci-client' and c['max_conns']==3, c"
+          curl -fsk -b jar $U/system
+          sudo olc-ui backup | tee backup.log
+          F=$(ls -1t /root/olc-ui-backups/*.db 2>/dev/null | head -1 || sudo sh -c 'ls -1t /root/olc-ui-backups/*.db | head -1')
+          F=$(sudo sh -c 'ls -1t /root/olc-ui-backups/*.db | head -1')
+          curl -fsk -b jar -X DELETE -H 'X-OLC: 1' $U/clients/1
+          sudo olc-ui restore "$F"
+          sleep 2
+          curl -fsk -b jar $U/clients | grep -q ci-client
+          sudo env OLCUI_YES=1 OLCUI_SSL=self olc-ui ssl
+          systemctl is-active olc-ui
+          sudo olc-ui password </dev/null
+      - name: Service logs
+        if: always()
+        run: sudo journalctl -u olc-ui -n 80 --no-pager

@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS traffic (
 	up        INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (client_id, day)
 );
+CREATE TABLE IF NOT EXISTS devices (
+	client_id  INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+	hwid       TEXT NOT NULL,
+	user_agent TEXT NOT NULL DEFAULT '',
+	ip         TEXT NOT NULL DEFAULT '',
+	first_seen INTEGER NOT NULL,
+	last_seen  INTEGER NOT NULL,
+	blocked    INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (client_id, hwid)
+);
 CREATE TABLE IF NOT EXISTS audit (
 	id     INTEGER PRIMARY KEY,
 	ts     INTEGER NOT NULL,
@@ -73,7 +83,42 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	return &Store{db: db}, nil
+	st := &Store{db: db}
+	if err := st.addColumns(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return st, nil
+}
+
+// columns added after v0.1; existing databases get them on open.
+var clientColumns = []struct{ name, def string }{ //nolint:gochecknoglobals // static migration table
+	{"max_conns", "INTEGER NOT NULL DEFAULT 3"},
+	{"max_devices", "INTEGER NOT NULL DEFAULT 0"},
+	{"last_online", "INTEGER NOT NULL DEFAULT 0"},
+}
+
+func (s *Store) addColumns() error {
+	have := map[string]bool{}
+	rows, err := s.db.Query(`SELECT name FROM pragma_table_info('clients')`)
+	if err != nil {
+		return wrap(err)
+	}
+	for rows.Next() {
+		var n string
+		_ = rows.Scan(&n)
+		have[n] = true
+	}
+	rows.Close()
+	for _, c := range clientColumns {
+		if have[c.name] {
+			continue
+		}
+		if _, err := s.db.Exec(`ALTER TABLE clients ADD COLUMN ` + c.name + ` ` + c.def); err != nil {
+			return fmt.Errorf("migrate clients.%s: %w", c.name, err)
+		}
+	}
+	return nil
 }
 
 // Close closes the database.

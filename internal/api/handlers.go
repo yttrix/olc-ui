@@ -34,6 +34,7 @@ type clientView struct {
 	store.Client
 	Status    string         `json:"status"`
 	SubURL    string         `json:"sub_url"`
+	Devices   int            `json:"devices"`
 	Locations []locationView `json:"locations"`
 }
 
@@ -87,11 +88,21 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
+	y, m, d := now.Date()
+	dayStart := time.Date(y, m, d, 0, 0, 0, 0, now.Location()).Unix()
+	weekStart := dayStart - 6*86400
 	stats := map[string]int64{}
 	for _, c := range clients {
 		stats["clients"]++
-		if c.Status(now) == store.StatusActive {
-			stats["active_clients"]++
+		stats["status_"+c.Status(now)]++
+		switch {
+		case c.LastOnline == 0:
+			stats["never_online"]++
+		case c.LastOnline >= dayStart:
+			stats["online_today"]++
+			stats["online_week"]++
+		case c.LastOnline >= weekStart:
+			stats["online_week"]++
 		}
 		for _, l := range c.Locations {
 			stats["locations"]++
@@ -105,14 +116,26 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 			stats["workers_mem"] += int64(rt.MemoryBytes)
 		}
 	}
-	traffic, err := s.store.Traffic(0, 30, now)
+	traffic, err := s.store.Traffic(0, 60, now)
 	if err != nil {
 		storeErr(w, err)
 		return
 	}
+	sum := func(from, to int) int64 { // days back, [from,to)
+		var t int64
+		for i := len(traffic) - to; i < len(traffic)-from; i++ {
+			t += traffic[i].Down + traffic[i].Up
+		}
+		return t
+	}
+	totals := map[string]int64{
+		"today": sum(0, 1), "yesterday": sum(1, 2),
+		"week": sum(0, 7), "prev_week": sum(7, 14),
+		"month": sum(0, 30), "prev_month": sum(30, 60),
+	}
 	writeJSON(w, map[string]any{
 		"name": s.panelName(), "version": s.version, "uptime": int64(time.Since(s.started).Seconds()),
-		"stats": stats, "traffic": traffic, "memory": memStats(),
+		"stats": stats, "totals": totals, "traffic": traffic[30:], "memory": memStats(),
 	})
 }
 
@@ -122,10 +145,13 @@ func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
 		storeErr(w, err)
 		return
 	}
+	devices, _ := s.store.DeviceCounts()
 	now := time.Now()
 	out := make([]clientView, 0, len(clients))
 	for _, c := range clients {
-		out = append(out, s.view(r, c, now))
+		v := s.view(r, c, now)
+		v.Devices = devices[c.ID]
+		out = append(out, v)
 	}
 	writeJSON(w, out)
 }
@@ -144,6 +170,8 @@ func (s *Server) handleClient(w http.ResponseWriter, r *http.Request) {
 }
 
 type clientInput struct {
+	MaxConns     int             `json:"max_conns"`
+	MaxDevices   int             `json:"max_devices"`
 	Name         string          `json:"name"`
 	Note         string          `json:"note"`
 	Enabled      bool            `json:"enabled"`
@@ -158,11 +186,12 @@ func (in clientInput) apply(c *store.Client) error {
 	c.Name = strings.TrimSpace(in.Name)
 	c.Note = strings.TrimSpace(in.Note)
 	c.Enabled, c.SpeedMbps, c.TrafficLimit = in.Enabled, in.SpeedMbps, in.TrafficLimit
+	c.MaxConns, c.MaxDevices = in.MaxConns, in.MaxDevices
 	c.ExpiresAt, c.Refresh = strings.TrimSpace(in.ExpiresAt), strings.TrimSpace(in.Refresh)
 	switch {
 	case c.Name == "" || len(c.Name) > 64 || strings.ContainsAny(c.Name, "\r\n"):
 		return fmt.Errorf("name is required (up to 64 characters)")
-	case c.SpeedMbps < 0 || c.TrafficLimit < 0:
+	case c.SpeedMbps < 0 || c.TrafficLimit < 0 || c.MaxConns < 0 || c.MaxDevices < 0:
 		return fmt.Errorf("limits must not be negative")
 	case c.Refresh != "" && !refreshRe.MatchString(c.Refresh):
 		return fmt.Errorf("refresh must look like 30m, 6h or 1d")
@@ -326,6 +355,9 @@ func (s *Server) applyLocation(in locationInput, l *store.Location) error {
 	}
 	if err := ep.Validate(); err != nil {
 		return err //nolint:wrapcheck // user-facing validation message
+	}
+	if other, used := s.store.RoomInUse(ep.Provider, ep.Room, l.ID); used {
+		return fmt.Errorf("this room is already used by location %q: one room can serve only one location", other)
 	}
 	l.Endpoint = ep
 	return nil

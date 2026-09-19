@@ -78,6 +78,10 @@ export interface Client {
   refresh: string;
   sub_token: string;
   created_at: number;
+  max_conns: number;
+  max_devices: number;
+  last_online: number;
+  devices: number;
   status: ClientStatus;
   sub_url: string;
   locations: Location[];
@@ -94,6 +98,7 @@ export interface Overview {
   version: string;
   uptime: number;
   stats: Record<string, number>;
+  totals: Record<string, number>;
   traffic: DayTraffic[];
   memory: { heap: number; sys: number; goroutines: number };
 }
@@ -119,7 +124,26 @@ export interface LogLine {
   line: string;
 }
 
+export interface Device {
+  hwid: string;
+  user_agent: string;
+  ip: string;
+  first_seen: number;
+  last_seen: number;
+  blocked: boolean;
+}
+
+export interface TLSStatus {
+  mode: string;
+  host?: string;
+  issuer?: string;
+  not_after?: number;
+  last_error?: string;
+}
+
 export interface ClientInput {
+  max_conns: number;
+  max_devices: number;
   name: string;
   note: string;
   enabled: boolean;
@@ -191,4 +215,17 @@ export const api = {
   rotateKey: (id: number) => call("POST", `locations/${id}/rotate-key`, {}),
   newRoom: (id: number) => call("POST", `locations/${id}/new-room`, {}),
   logs: (id: number) => call<LogLine[]>("GET", `locations/${id}/logs`),
+  devices: (id: number) => call<Device[]>("GET", `clients/${id}/devices`),
+  deviceAction: (id: number, hwid: string, action: "block" | "unblock" | "delete") =>
+    call("POST", `clients/${id}/devices`, { hwid, action }),
+  system: () => call<{ version: string; tls: TLSStatus | null }>("GET", "system"),
+  backupURL: () => apiBase + "backup",
+  restore: async (file: File) => {
+    const body = new FormData();
+    body.append("backup", file);
+    const res = await fetch(apiBase + "restore", { method: "POST", body, headers: { "X-OLC": "1" }, credentials: "same-origin" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, data?.error ?? res.statusText);
+    return data as { clients: number; locations: number };
+  },
 };

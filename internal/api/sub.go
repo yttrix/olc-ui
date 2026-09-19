@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,6 +17,25 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 	c, err := s.store.ClientBySubToken(r.PathValue("token"))
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	// olcbox identifies each installation with x-hwid (like Happ/Incy).
+	// With a device limit, requests without it (browsers, copied links) and
+	// new devices over the limit are refused.
+	hwid := r.Header.Get("x-hwid")
+	switch {
+	case hwid != "":
+		err := s.store.TouchDevice(c.ID, hwid, r.UserAgent(), clientIP(r), c.MaxDevices)
+		switch {
+		case errors.Is(err, store.ErrDeviceLimit):
+			http.Error(w, fmt.Sprintf("Device limit reached (%d). Ask the administrator to free a slot.", c.MaxDevices), http.StatusForbidden)
+			return
+		case errors.Is(err, store.ErrDeviceBlocked):
+			http.Error(w, "This device is blocked.", http.StatusForbidden)
+			return
+		}
+	case c.MaxDevices > 0:
+		http.Error(w, "This subscription is limited to registered devices: add it in the olcbox app.", http.StatusForbidden)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
