@@ -28,7 +28,7 @@ import { Badge, Button, Card, CopyButton, Empty, IconButton, Input, Modal, Progr
 type Dialog =
   | { kind: "createClient" }
   | { kind: "editClient"; client: Client }
-  | { kind: "createLocation"; client: Client }
+  | { kind: "createLocation"; client: Client; step2?: boolean }
   | { kind: "editLocation"; location: Location }
   | { kind: "qr"; location: Location }
   | { kind: "sub"; client: Client }
@@ -193,14 +193,13 @@ export function Clients({
       </Card>
 
       {dialog?.kind === "createClient" && (
-        <Modal title="Новый клиент" onClose={close}>
+        <Modal title="Новый клиент · шаг 1 из 2" onClose={close}>
           <ClientForm
             onCancel={close}
             onSubmit={async (input) => {
               const created = await api.createClient(input);
               await reload();
-              toast("Клиент создан — добавьте ему локацию");
-              setDialog({ kind: "createLocation", client: created });
+              setDialog({ kind: "createLocation", client: created, step2: true });
             }}
           />
         </Modal>
@@ -220,7 +219,11 @@ export function Clients({
         </Modal>
       )}
       {dialog?.kind === "createLocation" && meta && (
-        <Modal title={`Новая локация · ${dialog.client.name}`} onClose={close} wide>
+        <Modal
+          title={dialog.step2 ? `Шаг 2 из 2 · подключение для «${dialog.client.name}»` : `Новая локация · ${dialog.client.name}`}
+          onClose={close}
+          wide
+        >
           <LocationForm
             meta={meta}
             defaultJitsi={defaultJitsi}
@@ -430,7 +433,8 @@ function LocationsTable({
           locations.length > 0 && "border-t border-border",
         )}
       >
-        <Plus className="h-4 w-4" /> Добавить локацию
+        <Plus className="h-4 w-4" />
+        {locations.length === 0 ? "Добавить подключение: WB Stream, Телемост или Jitsi" : "Добавить локацию"}
       </button>
     </div>
   );

@@ -54,6 +54,14 @@ export function ClientForm({
 
   return (
     <form className="space-y-4" onSubmit={submit}>
+      {!initial && (
+        <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm">
+          <span className="font-medium">Шаг 1 из 2 — клиент.</span>{" "}
+          <span className="text-muted-foreground">
+            На следующем шаге выберете сервис для подключения: WB Stream, Яндекс Телемост или Jitsi.
+          </span>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Имя">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="например, phone-anna" autoFocus required />
@@ -82,7 +90,17 @@ export function ClientForm({
             </span>
           }
         >
-          <Input type="date" value={expires} onChange={(e) => setExpires(e.target.value)} />
+          <div className="relative">
+            <Input
+              type="date"
+              value={expires}
+              onChange={(e) => setExpires(e.target.value)}
+              className={expires ? "" : "text-transparent focus:text-foreground"}
+            />
+            {!expires && (
+              <span className="pointer-events-none absolute left-3 top-2 text-sm text-muted-foreground">бессрочно</span>
+            )}
+          </div>
         </Field>
         <Field label="Обновление подписки" hint="например 30m, 6h, 1d; пусто — как в настройках">
           <Input value={refresh} onChange={(e) => setRefresh(e.target.value)} placeholder="по умолчанию" />
@@ -95,7 +113,7 @@ export function ClientForm({
           Отмена
         </Button>
         <Button type="submit" variant="primary" disabled={busy}>
-          {initial ? "Сохранить" : "Создать"}
+          {initial ? "Сохранить" : "Далее: выбрать сервис →"}
         </Button>
       </div>
     </form>
